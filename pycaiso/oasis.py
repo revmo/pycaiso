@@ -486,14 +486,14 @@ def fetch_groupzip(
     the concatenated and unmodified resulting DataFrame.
     
     Args—
-     
     + group_id (str): groupid for fetching a given group report (definitions documented [here](https://www.caiso.com/documents/oasis-interfacespecification_v5_1_2clean_fall2017release.pdf))
+    
     + trading_day (datetime): the day to fetch data for (group reports are always for a single day)
     
     Example—
-    ```df = fetch_groupzip('DAM_LMP_GRP', datetime(2025, 4, 2)) 
-    ```
+    >>> df = fetch_groupzip('DAM_LMP_GRP', datetime(2025, 4, 2)) 
     """
+    
     url = _build_groupzip_url(group_id, trading_day, local_tz=local_tz)
     resp = requests.get(url, timeout=300)
     resp.raise_for_status()
@@ -508,6 +508,7 @@ def fetch_groupzip(
             with zf.open(member) as f:
                 frames.append(pd.read_csv(f, low_memory=False))
     return pd.concat(frames, ignore_index=True)
+
 
 def get_daily_dam_lmps(trading_day: datetime) -> pd.DataFrame:
     """
