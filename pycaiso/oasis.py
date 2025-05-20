@@ -425,3 +425,56 @@ def get_lmps(
         sort_values=["OPR_DT", "OPR_HR"],
         reindex_columns=COLUMNS,
     )
+
+
+
+## GROUPZIP/GROUP REPORT SUPPORT:
+"""
+Lightweight client for the **/GroupZip** endpoint definitions made available by OASIS. 
+
+Reduces the ~20k calls required for daily per-node LMP data for all CAISO nodes to just a single call.
+Only the daily Day-Ahead LMP group report (**DAM_LMP_GRP**) is exposed for now, 
+but future additions could include: 
+
+**RTM_LMP_GRP, RTM_LAP_GRP, LMP_GHG_PRC, PRC_RTM_LAP**
+
+See official documentation of OASIS API Specs for more details:
+https://www.caiso.com/documents/oasis-interfacespecification_v5_1_2clean_fall2017release.pdf
+"""
+    
+# Registry of known group reports – 
+_GROUP_REPORTS: dict[str, dict[str, Any]] = {
+    #  groupid        /GroupZip/                v12              CSV 
+    "DAM_LMP_GRP": {"endpoint": "GroupZip", "version": 12, "resultformat": 6},
+    # << add more group-ids here as needed >>
+}
+
+def _build_groupzip_url(
+    group_id: str, 
+    start: datetime,
+    *,
+    local_tz: str = "America/Los_Angeles",
+    **extra: Any,
+) -> str:
+    """
+    Construct the full GroupZip URL for *group_id* and *trading day*.
+
+    Only the daily Day-Ahead LMP group report 
+    (groupid = **DAM_LMP_GRP**) is exposed for now, but future additions 
+    could include: 
+    **RTM_LMP_GRP, RTM_LAP_GRP, LMP_GHG_PRC, PRC_RTM_LAP**
+    """
+    if group_id not in _GROUP_REPORTS:
+        raise ValueError(f"Unknown group_id: {group_id}")
+    
+    spec = _GROUP_REPORTS["DAM_LMP_GRP"]
+    params = {
+        "groupid": group_id,
+        "version": spec["version"],
+        "resultformat": spec["resultformat"],
+        "startdatetime": Oasis()._get_UTC_string(start, local_tz),
+        **extra,
+    }
+    return (
+        f""
+    )
