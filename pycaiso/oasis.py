@@ -433,10 +433,6 @@ def get_lmps(
 Lightweight client for the **/GroupZip** endpoint definitions made available by OASIS. 
 
 Reduces the ~20k calls required for daily per-node LMP data for all CAISO nodes to just a single call.
-Only the daily Day-Ahead LMP group report (**DAM_LMP_GRP**) is exposed for now, 
-but future additions could include: 
-
-**RTM_LMP_GRP, RTM_LAP_GRP, LMP_GHG_PRC, PRC_RTM_LAP**
 
 See official documentation of OASIS API Specs for more details:
 https://www.caiso.com/documents/oasis-interfacespecification_v5_1_2clean_fall2017release.pdf
@@ -476,5 +472,46 @@ def _build_groupzip_url(
         **extra,
     }
     return (
-        f""
+        f"http://oasis.caiso.com/oasisapi/{spec['endpoint']}?"
+        + "&".join(f"{k}={v}" for k, v in params.items())
     )
+    
+
+def fetch_groupzip(
+    group_id: str,
+    trading_day: datetime,
+    *,
+    local_tz: str = "America/Los_Angeles",
+) -> pd.Dataframe:
+    """
+    Download all CSVs in the GroupZip bundle and return 
+    the concatenated and unmodified DataFrame.
+
+    Example:
+    >>> df = fetch_groupzip('DAM_LMP_GRP', datetime(2025, 4, 2))
+    """
+    url = _build_groupzip_url(group_id, trading_day, local_tz=local_tz)
+    resp = requests.get(url, timeout=300)
+    resp.raise_for_status()
+    
+    cd = resp.headers.get("content-disposition", "")
+    if re.search(r"\\.xml\\.zip;$", cd):
+        raise NoDataAvailableError(f"No data for {trading_day.date()}")
+    
+    frames: List[pd.DataFrame] = []
+    with io.BytesIO(resp.content) as buf, zipfile.ZipFile(buf) as zf:
+        for member in zf.namelist():  # 4 files for DAM_LMP_GRP: MCE, MCL, MCC, LMP
+            with zf.open(member) as f:
+                frames.append(pd.read_csv(f, low_memory=False))
+    return pd.concat(frames, ignore_index=True)
+
+def get_daily_dam_lmps(trading_day: datetime) -> pd.DataFrame:
+    """
+    Shorthand for::
+
+        fetch_groupzip('DAM_LMP_GRP', trading_day)
+    
+    Returns a DF concatenating all 4 CSVs returned by the DAM_LMP_GRP report:
+    MCE, MCL, MCC, LMP
+    """
+    return fetch_groupzip("DAM_LMP_GRP", trading_day)
