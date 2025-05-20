@@ -447,11 +447,9 @@ def _build_groupzip_url(
     RTM_LMP_GRP, RTM_LAP_GRP, LMP_GHG_PRC, PRC_RTM_LAP
 
     Args—
-     
     + group_id (str): groupid for fetching a given group report (definitions documented [here](https://www.caiso.com/documents/oasis-interfacespecification_v5_1_2clean_fall2017release.pdf))
     + start (datetime): Trading day to fetch data for (group reports are always for a single day)
-    
-    
+      
     Returns—
     + str: URL to fetch the group report from
     
