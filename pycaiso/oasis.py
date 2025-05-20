@@ -428,21 +428,9 @@ def get_lmps(
 
 
 
-## GROUPZIP/GROUP REPORT SUPPORT:
-"""
-Lightweight client for the **/GroupZip** endpoint definitions made available by OASIS. 
-
-Reduces the ~20k calls required for daily per-node LMP data for all CAISO nodes to just a single call.
-
-See official documentation of OASIS API Specs for more details:
-https://www.caiso.com/documents/oasis-interfacespecification_v5_1_2clean_fall2017release.pdf
-"""
-    
 # Registry of known group reports – 
 _GROUP_REPORTS: dict[str, dict[str, Any]] = {
-    #  groupid        /GroupZip/                v12              CSV 
     "DAM_LMP_GRP": {"endpoint": "GroupZip", "version": 12, "resultformat": 6},
-    # << add more group-ids here as needed >>
 }
 
 def _build_groupzip_url(
@@ -453,12 +441,22 @@ def _build_groupzip_url(
     **extra: Any,
 ) -> str:
     """
-    Construct the full GroupZip URL for *group_id* and *trading day*.
+    Construct the full GroupZip URL for *group_id* and *trading day*. 
+    Only the daily Day-Ahead LMP group report (**DAM_LMP_GRP**) 
+    is exposed for now, but future additions could include: 
+    RTM_LMP_GRP, RTM_LAP_GRP, LMP_GHG_PRC, PRC_RTM_LAP
 
-    Only the daily Day-Ahead LMP group report 
-    (groupid = **DAM_LMP_GRP**) is exposed for now, but future additions 
-    could include: 
-    **RTM_LMP_GRP, RTM_LAP_GRP, LMP_GHG_PRC, PRC_RTM_LAP**
+    Args—
+     
+    + group_id (str): groupid for fetching a given group report (definitions documented [here](https://www.caiso.com/documents/oasis-interfacespecification_v5_1_2clean_fall2017release.pdf))
+    + start (datetime): Trading day to fetch data for (group reports are always for a single day)
+    
+    
+    Returns—
+    + str: URL to fetch the group report from
+    
+    See official documentation of OASIS API Specs for more details on group reports:
+    https://www.caiso.com/documents/oasis-interfacespecification_v5_1_2clean_fall2017release.pdf
     """
     if group_id not in _GROUP_REPORTS:
         raise ValueError(f"Unknown group_id: {group_id}")
@@ -482,13 +480,19 @@ def fetch_groupzip(
     trading_day: datetime,
     *,
     local_tz: str = "America/Los_Angeles",
-) -> pd.Dataframe:
+) -> pd.DataFrame:
     """
     Download all CSVs in the GroupZip bundle and return 
-    the concatenated and unmodified DataFrame.
-
-    Example:
-    >>> df = fetch_groupzip('DAM_LMP_GRP', datetime(2025, 4, 2))
+    the concatenated and unmodified resulting DataFrame.
+    
+    Args—
+     
+    + group_id (str): groupid for fetching a given group report (definitions documented [here](https://www.caiso.com/documents/oasis-interfacespecification_v5_1_2clean_fall2017release.pdf))
+    + trading_day (datetime): the day to fetch data for (group reports are always for a single day)
+    
+    Example—
+    ```df = fetch_groupzip('DAM_LMP_GRP', datetime(2025, 4, 2)) 
+    ```
     """
     url = _build_groupzip_url(group_id, trading_day, local_tz=local_tz)
     resp = requests.get(url, timeout=300)
@@ -511,7 +515,7 @@ def get_daily_dam_lmps(trading_day: datetime) -> pd.DataFrame:
 
         fetch_groupzip('DAM_LMP_GRP', trading_day)
     
-    Returns a DF concatenating all 4 CSVs returned by the DAM_LMP_GRP report:
+    Returns a DF concatenating all 4 CSVs returned by the DAM_LMP_GRP group report:
     MCE, MCL, MCC, LMP
     """
     return fetch_groupzip("DAM_LMP_GRP", trading_day)
