@@ -32,6 +32,7 @@ class OASISGroupReport(Enum):
     For more info on Group Report definitions, see Part 7 of docs for OASIS API Specs:
     https://www.caiso.com/Documents/OASIS-InterfaceSpecification_v4_3_5Clean_Spring2017Release.pdf
     """
+    
     DAM_LMP = ("DAM_LMP_GRP", 12, 6) # Daily DAM LMPs
     DAM_SPTIE_LMP = ("DAM_SPTIE_LMP_GRP", 1, 6) # DAM Scheduling Point Tie LMPs
     RTM_LMP = ("RTM_LMP_GRP", 1, 6) # Interval RTM LMPs
