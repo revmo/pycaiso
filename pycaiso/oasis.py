@@ -3,7 +3,7 @@ import re
 import zipfile
 from datetime import datetime, timedelta
 from typing import List, Dict, TypeVar, Union, Optional, Any
-
+from enum import Enum
 import pandas as pd
 import pytz
 import requests
@@ -20,9 +20,31 @@ class BadDateRangeError(Exception):
     pass
 
 
+class OASISGroupReport(Enum):
+    """
+    Enumeration of available CAISO/OASIS Group reports.
+    
+    For more info on Group Report definitions, see Part 7 of docs for OASIS API Specs:
+    https://www.caiso.com/Documents/OASIS-InterfaceSpecification_v4_3_5Clean_Spring2017Release.pdf
+    
+    """
+    DAM_LMP = ("DAM_LMP_GRP", 12, 6) # Daily DAM LMPs
+    DAM_SPTIE_LMP = ("DAM_SPTIE_LMP_GRP", 1, 6) # DAM Scheduling Point Tie LMPs
+    RTM_LMP = ("RTM_LMP_GRP", 1, 6) # Interval RTM LMPs
+    HASP_LMP = ("HASP_LMP_GRP", 1, 6) # Hour Ahead Scheduling Point LMPs
+    RTD_SPTIE_LMP = ("RTD_SPTIE_LMP_GRP", 1, 6) # RTD Scheduling Point Tie LMPs
+
+    def __init__(self, group_id: str, version: int, result_format: int):
+        self.group_id = group_id
+        self.version = version
+        self.result_format = result_format # result format 6 = CSV (otherwise XML)
+
+
 class Oasis:
-    def __init__(self) -> None:
+    def __init__(self, timeout: int = 15) -> None:
         self.base_url: str = "http://oasis.caiso.com/oasisapi/SingleZip?"
+        self.group_url: str = "http://oasis.caiso.com/oasisapi/GroupZip?"
+        self.timeout: int = timeout
 
     @staticmethod
     def _validate_date_range(start: datetime, end: datetime) -> None:
@@ -57,7 +79,7 @@ class Oasis:
             response: requests response object
         """
 
-        resp: Response = requests.get(self.base_url, params=params, timeout=15)
+        resp: Response = requests.get(self.base_url, params=params, timeout=self.timeout)
         resp.raise_for_status()
 
         headers: str = resp.headers["content-disposition"]
@@ -66,6 +88,31 @@ class Oasis:
             raise NoDataAvailableError("No data available for this query.")
 
         return resp
+    
+    def request_group(self, params: Dict[str, Any]) -> Response:
+        """Make http request for GroupZip endpoint
+
+        Base method to get request at group_url
+
+        Args:
+            params (dict): keyword params to construct request
+
+        Returns:
+            response: requests response object
+        """
+
+        resp: Response = requests.get(self.group_url, params=params, timeout=self.timeout)
+        resp.raise_for_status()
+        
+        headers: str = resp.headers["content-disposition"]
+        
+        if re.search(r"\.xml\.zip;$", headers):
+            groupid = params.get("groupid", "<unknown>")
+            raise NoDataAvailableError(f"No data available for this query (groupid {groupid}).")
+        
+        return resp
+        
+        
 
     def _get_UTC_string(
         self,
@@ -131,6 +178,65 @@ class Oasis:
                 if reindex_columns:
                     df = df.reindex(columns=reindex_columns)
 
+        return df
+    
+    def get_group_df(self, response: Response) -> pd.DataFrame:
+        """Convert group-report response to pandas DF.
+        
+        Args:
+            response (requests.Response): response object
+            
+        Returns:
+            df (pandas.DataFrame): pandas DF
+        """
+
+        with io.BytesIO(response.content) as buffer:
+            with zipfile.ZipFile(buffer) as zip_file:
+                frames = []
+                for member in zip_file.namelist():
+                    with zip_file.open(member) as f:
+                        frames.append(pd.read_csv(f, low_memory=False))
+        return pd.concat(frames, ignore_index=True)
+    
+    def fetch_group_report(
+        self, 
+        report: OASISGroupReport,
+        trading_day: datetime,
+        local_tz: str = "America/Los_Angeles",
+    ) -> pd.DataFrame:
+        """Fetch group report for given trading day.
+        
+        Args:
+            report (OASISGroupReport): OASISGroupReport enum defining which report to fetch
+            trading_day (datetime.datetime): trading day to fetch report for
+            local_tz (str): timezone
+            
+        Returns:
+            df (pandas.DataFrame): pandas DF
+            
+        See official documentation of OASIS API Specs for more details on group report definitions:
+        https://www.caiso.com/documents/oasis-interfacespecification_v5_1_2clean_fall2017release.pdf
+        """
+        
+        if trading_day.date() > datetime.now().date():
+            raise BadDateRangeError(
+                f"Trading day {trading_day:%Y-%m-%d} cannot be in the future."
+            )
+        
+        params: Dict[str, Any] = {
+            "groupid": report.group_id,
+            "version": report.version, 
+            "resultformat": report.result_format,
+            "startdatetime": self._get_UTC_string(trading_day, local_tz),
+        }
+        
+        resp: Response = self.request_group(params)
+        
+        df: pd.DataFrame = self.get_group_df(resp)
+        
+        if "OPR_DT" in df.columns:
+            df["OPR_DT"] = pd.to_datetime(df["OPR_DT"]).dt.date
+            
         return df
 
 
@@ -427,94 +533,21 @@ def get_lmps(
     )
 
 
-
-# Registry of known group reports – 
-_GROUP_REPORTS: dict[str, dict[str, Any]] = {
-    "DAM_LMP_GRP": {"endpoint": "GroupZip", "version": 12, "resultformat": 6},
-}
-
-def _build_groupzip_url(
-    group_id: str, 
-    start: datetime,
-    *,
-    local_tz: str = "America/Los_Angeles",
-    **extra: Any,
-) -> str:
-    """
-    Construct the full GroupZip URL for *group_id* and *trading day*. 
-    Only the daily Day-Ahead LMP group report (**DAM_LMP_GRP**) 
-    is exposed for now, but future additions could include: 
-    RTM_LMP_GRP, RTM_LAP_GRP, LMP_GHG_PRC, PRC_RTM_LAP
-
-    Args—
-    + group_id (str): groupid for fetching a given group report (definitions documented [here](https://www.caiso.com/documents/oasis-interfacespecification_v5_1_2clean_fall2017release.pdf))
-    + start (datetime): Trading day to fetch data for (group reports are always for a single day)
-      
-    Returns—
-    + str: URL to fetch the group report from
+def get_daily_dam_lmps(trading_day: datetime) -> pd.DataFrame: 
+    """Shorthand for fetching daily DAM LMPs for a given trading day.
     
-    See official documentation of OASIS API Specs for more details on group reports:
-    https://www.caiso.com/documents/oasis-interfacespecification_v5_1_2clean_fall2017release.pdf
-    """
-    if group_id not in _GROUP_REPORTS:
-        raise ValueError(f"Unknown group_id: {group_id}")
+    Args:
+        trading_day (datetime.datetime): trading day to fetch report for
+        local_tz (str): timezone
     
-    spec = _GROUP_REPORTS["DAM_LMP_GRP"]
-    params = {
-        "groupid": group_id,
-        "version": spec["version"],
-        "resultformat": spec["resultformat"],
-        "startdatetime": Oasis()._get_UTC_string(start, local_tz),
-        **extra,
-    }
-    return (
-        f"http://oasis.caiso.com/oasisapi/{spec['endpoint']}?"
-        + "&".join(f"{k}={v}" for k, v in params.items())
+    Returns:
+        df (pandas.DataFrame): pandas DF    
+    """
+    
+    oasis = Oasis()
+    
+    return oasis.fetch_group_report(
+        report=OASISGroupReport.DAM_LMP,
+        trading_day=trading_day,
     )
     
-
-def fetch_groupzip(
-    group_id: str,
-    trading_day: datetime,
-    *,
-    local_tz: str = "America/Los_Angeles",
-) -> pd.DataFrame:
-    """
-    Download all CSVs in the GroupZip bundle and return 
-    the concatenated and unmodified resulting DataFrame.
-    
-    Args—
-    + group_id (str): groupid for fetching a given group report (definitions documented [here](https://www.caiso.com/documents/oasis-interfacespecification_v5_1_2clean_fall2017release.pdf))
-    
-    + trading_day (datetime): the day to fetch data for (group reports are always for a single day)
-    
-    Example—
-    >>> df = fetch_groupzip('DAM_LMP_GRP', datetime(2025, 4, 2)) 
-    """
-    
-    url = _build_groupzip_url(group_id, trading_day, local_tz=local_tz)
-    resp = requests.get(url, timeout=300)
-    resp.raise_for_status()
-    
-    cd = resp.headers.get("content-disposition", "")
-    if re.search(r"\\.xml\\.zip;$", cd):
-        raise NoDataAvailableError(f"No data for {trading_day.date()}")
-    
-    frames: List[pd.DataFrame] = []
-    with io.BytesIO(resp.content) as buf, zipfile.ZipFile(buf) as zf:
-        for member in zf.namelist():  # 4 files for DAM_LMP_GRP: MCE, MCL, MCC, LMP
-            with zf.open(member) as f:
-                frames.append(pd.read_csv(f, low_memory=False))
-    return pd.concat(frames, ignore_index=True)
-
-
-def get_daily_dam_lmps(trading_day: datetime) -> pd.DataFrame:
-    """
-    Shorthand for::
-
-        fetch_groupzip('DAM_LMP_GRP', trading_day)
-    
-    Returns a DF concatenating all 4 CSVs returned by the DAM_LMP_GRP group report:
-    MCE, MCL, MCC, LMP
-    """
-    return fetch_groupzip("DAM_LMP_GRP", trading_day)
