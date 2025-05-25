@@ -25,7 +25,7 @@ class OASISGroupReport(Enum):
     
     OASISGroupReport tuple format:
         (group_id, version, result_format)
-        group_id: str = Group ID defining group report collected
+        group_id: str = Group ID defining group report that is being requested
         version: int = Version of group report (1 works for most, but swapping out for other values can sometimes return additional data; see docs for more info)
         result_format: int = filetype of rendered response data (6 = CSV, 1/None = XML)
     
