@@ -27,6 +27,11 @@ class OASISGroupReport(Enum):
     For more info on Group Report definitions, see Part 7 of docs for OASIS API Specs:
     https://www.caiso.com/Documents/OASIS-InterfaceSpecification_v4_3_5Clean_Spring2017Release.pdf
     
+    OASISGroupReport tuple format:
+        (group_id, version, result_format)
+        group_id: str = Group ID defining group report collected
+        version: int = Version of group report (1 works for most, but swapping out for other values can sometimes return additional data; see docs for more info)
+        result_format: int = filetype of rendered response data (6 = CSV, 1/None = XML)
     """
     DAM_LMP = ("DAM_LMP_GRP", 12, 6) # Daily DAM LMPs
     DAM_SPTIE_LMP = ("DAM_SPTIE_LMP_GRP", 1, 6) # DAM Scheduling Point Tie LMPs
