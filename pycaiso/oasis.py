@@ -46,9 +46,9 @@ class OASISGroupReport(Enum):
 
 
 class Oasis:
-    def __init__(self, timeout: int = 15) -> None:
-        self.base_url: str = "http://oasis.caiso.com/oasisapi/SingleZip?"
-        self.group_url: str = "http://oasis.caiso.com/oasisapi/GroupZip?"
+    def __init__(self, timeout=(10, 120)) -> None:
+        self.base_url: str = "https://oasis.caiso.com/oasisapi/SingleZip?"
+        self.group_url: str = "https://oasis.caiso.com/oasisapi/GroupZip?"
         self.timeout: int = timeout
 
     @staticmethod
